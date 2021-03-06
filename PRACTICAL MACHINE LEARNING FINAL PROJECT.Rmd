@@ -1,0 +1,153 @@
+---
+title: "PRACTICAL MACHINE LEARNING FINAL PROJECT"
+author: "Luis Delso"
+date: "5/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## INTRO
+
+In this document we will perform prediction with the dataset from Qualitative Activity Recognition [1] which is composed of 2 csv documents.
+
+-Training: 19622 observations 
+
+-Testing: 20 observations
+
+Each observation corresponds to a time window of weight lifting (specifically dumbel lift) which records among other variables, values of accelerometers, gyroscopes and other devices in different parts of the body and dumbell.
+
+The datasets have 160 variables and we will study with the training dataset the variable "classe" wich is a value from "A" to "D". [1] Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter for recording this categorical variable.
+
+The goal is to predict the variable classe with the testing dataset in 20 observations. We will only use the accelerometers records from belt, forearm, arm, and dumbell.
+
+## GETTING AND CLEANING THE DATA
+
+```{r getting and cleaning data 1}
+library(caret)
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+              "pml-training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+              "pml-testing.csv")
+
+testing <- read.csv("pml-testing.csv")
+training <- read.csv("pml-training.csv")
+names(training)[1:50]
+unique(training$classe)
+
+```
+
+Only shown 50 variables out of 160. We are only interested in "classe" which is the categorical output to predict, and the records of the accelerometers. 
+
+The coode below these lines is for the subset purpose:
+
+```{r getting and cleaning data 2}
+namesAcc <- c("accel_belt","accel_forearm","accel_arm","accel_dumbbell") #vector 
+#of strings wich names of variables that we want as predictors, should contain.
+match <- sapply(namesAcc,
+                function (y) sapply(names(training), 
+                                    function (x) grepl(y,x)&!grepl("var",x)))
+subsetNames <- apply(match,1,sum)>0 #at least one of the strings of namesAcc
+subsetNames["classe"] <- TRUE #Name "classe" doesnt contain any of namesAcc, 
+#but we want it at the dataset as it is the outcome variable
+
+testing <- testing[,subsetNames]
+training <- training[,subsetNames]
+dim(training)
+head(training)
+```
+
+As shown in the output, all of the features are numeric variables excepting the "classe" variable.
+
+## CROSS VALIDATION ALGORITHM
+We will split the training set in training and data set 4 times using k-folds. Then we will apply the tree classification, linear discriminant analysis and random forest.
+
+```{r fold preprocessing}
+set.seed(1245)
+folds <- createFolds(training$classe,k=4)
+sapply(folds,length)
+```
+
+The folds are 4 subsets of indexes randomly selected, without replacement. Those indexes will correspond to the training sets in each validation. In the next 3 code chunks, trF correspond to the training dataset for each iteration and tsF, to the testing. In each iteration and in each cross validation, the model will be tested and predicted with the tsF data frame. The validation will be tested with the accuracy and it will be stored in the vector accuVector
+
+In the code below, method tree classification is tested
+
+```{r cross validation with trees, cache=TRUE}
+accuVector <- numeric(0)
+for (fold in folds) {
+    trF <- training[-fold,]
+    tsF <- training[fold,]
+    modFit <- train(classe~.,method = 'rpart',data=trF)
+    accuracy <- sum(predict(modFit,newdata=tsF)==tsF$classe)/nrow(tsF)
+    accuVector <- c(accuVector,accuracy)
+}
+accuVector
+accuMean <- mean(accuVector)
+accuSd <- sd(accuVector)
+```
+
+As we can see, the accuracy is not acceptable at all. With a mean of `r mean(accuVector)` and a standard deviation of `r sd(accuVector)`. The classification with trees is not valid for prediction another method must be tried.
+
+In the code below, method LDA is tested
+```{r cross validation with lda, cache=TRUE}
+accuVector <- numeric(0)
+for (fold in folds) {
+    trF <- training[-fold,]
+    tsF <- training[fold,]
+    modFit <- train(classe~.,method = 'lda',data=trF)
+    accuracy <- sum(predict(modFit,newdata=tsF)==tsF$classe)/nrow(tsF)
+    accuVector <- c(accuVector,accuracy)
+}
+accuVector
+accuMean <- mean(accuVector)
+accuSd <- sd(accuVector)
+```
+
+As we can see, the accuracy is higher as in previous test but is still not acceptable. With a mean of `r mean(accuVector)` and a standard deviation of `r sd(accuVector)`. 
+
+In the code below we will test random forests. Which is a well-known method for classification. But more time-consuming than the previous methods in the other hand
+
+```{r cross validation with random forests, cache=TRUE}
+accuVector <- numeric(0)
+for (fold in folds) {
+    trF <- training[-fold,]
+    tsF <- training[fold,]
+    modFit <- train(classe~.,method = 'rf',data=trF)
+    accuracy <- sum(predict(modFit,newdata=tsF)==tsF$classe)/nrow(tsF)
+    accuVector <- c(accuVector,accuracy)
+}
+accuVector
+accuMean <- mean(accuVector)
+accuSd <- sd(accuVector)
+```
+
+As we can see, the accuracy is much higher as in previous test. With a mean of `r mean(accuVector)` and a standard deviation of `r sd(accuVector)`. We will consider these values acceptable and the random forests method is considered valid for out of samples prediction which the estimated out of sample accuracy of `r mean(accuVector)`.
+
+## PREDICTION OF TESTING VALUES
+
+In the code chunk below, is shown finally the code for predicting the 20 cases of testing dataset.
+
+```{r prediction of testing values, cache = TRUE}
+modFitDefinitive <- train(classe~.,method = "rf", data= training)
+prediction <- predict(modFitDefinitive, testing)
+dfPred <- data.frame(classe = prediction)
+```
+
+And lets see the prediction in a pretty way with the code as follows:
+```{r result of prediction, cache = TRUE}
+library(knitr)
+pretty <- t(dfPred)
+colnames(pretty) <- sapply(1:20,as.character)
+kable(pretty)
+```
+
+In the quiz, the test the grade according to the answers is 95%, which can be explained by the out of sample accuracy 
+
+## REFFERENCES
+
+[1]Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz6oG3Jb8sw
+
